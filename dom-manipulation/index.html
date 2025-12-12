@@ -4,17 +4,142 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dynamic Quote Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        
+        #quoteDisplay {
+            border: 1px solid #ccc;
+            padding: 30px;
+            margin: 20px 0;
+            min-height: 100px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            border: none;
+            background-color: #4CAF50;
+            color: white;
+            border-radius: 3px;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        input, select {
+            padding: 8px;
+            margin: 5px;
+            width: 300px;
+        }
+        
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .notification {
+            padding: 10px;
+            margin: 10px 0;
+            background-color: #e7f3fe;
+            border-left: 6px solid #2196F3;
+            border-radius: 4px;
+        }
+        
+        .conflict-alert {
+            background-color: #fff3cd;
+            border-left: 6px solid #ffc107;
+            color: #856404;
+        }
+        
+        .success {
+            background-color: #d4edda;
+            border-left: 6px solid #28a745;
+            color: #155724;
+        }
+        
+        .error {
+            background-color: #f8d7da;
+            border-left: 6px solid #dc3545;
+            color: #721c24;
+        }
+    </style>
 </head>
 <body>
     <h1>Dynamic Quote Generator</h1>
     
     <div id="quoteDisplay">
-        <!-- Quotes will appear here -->
+        <p>Click "Show New Quote" to see a random quote!</p>
     </div>
     
-    <button id="newQuote">Show New Quote</button>
+    <div style="text-align: center;">
+        <button id="newQuote">Show New Quote</button>
+        <button onclick="saveToSession()">Save Current Quote to Session</button>
+    </div>
     
-    <!-- Form will be created by createAddQuoteForm() -->
+    <div class="section">
+        <h3>Add New Quote</h3>
+        <div>
+            <input id="newQuoteText" type="text" placeholder="Enter a new quote" />
+            <input id="newQuoteCategory" type="text" placeholder="Enter quote category" />
+            <button onclick="addQuote()">Add Quote</button>
+        </div>
+    </div>
+    
+    <div class="section">
+        <h3>Filter Quotes by Category</h3>
+        <select id="categoryFilter" onchange="filterQuotes()">
+            <option value="all">All Categories</option>
+        </select>
+        <button onclick="clearFilter()">Clear Filter</button>
+    </div>
+    
+    <div class="section">
+        <h3>Import/Export Quotes</h3>
+        <button onclick="exportToJsonFile()">Export Quotes</button>
+        <a id="downloadLink" style="display: none;"></a>
+        
+        <div style="margin-top: 15px;">
+            <input type="file" id="importFile" accept=".json" onchange="importFromJsonFile(event)" />
+            <button onclick="document.getElementById('importFile').click()">Import Quotes</button>
+        </div>
+    </div>
+    
+    <div class="section">
+        <h3>Server Synchronization</h3>
+        <button onclick="fetchQuotesFromServer()">Fetch from Server</button>
+        <button onclick="postDataToServer()">Post to Server</button>
+        <button onclick="syncQuotes()">Sync Now</button>
+        
+        <div style="margin-top: 10px;">
+            <label>
+                <input type="checkbox" id="autoSync" checked> Auto-sync every 30 seconds
+            </label>
+        </div>
+        
+        <div id="notificationArea"></div>
+        <div id="conflictArea" style="display: none;"></div>
+    </div>
+    
+    <div class="section">
+        <h3>All Quotes</h3>
+        <div id="allQuotes"></div>
+    </div>
 
     <script src="script.js"></script>
 </body>
