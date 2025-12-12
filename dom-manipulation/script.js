@@ -233,23 +233,31 @@ async function fetchQuotesFromServer() {
     showNotification('Fetching quotes from server...', 'info');
     
     try {
-        // Mock API call with delay
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Use actual fetch API with GET method
+        const response = await fetch(`${API_URL}?_limit=3`);
         
-        // Mock server data
-        const serverQuotes = [
-            { id: 1001, text: "Server quote 1: Always code as if the guy who ends up maintaining your code will be a violent psychopath who knows where you live.", category: "Programming", source: 'server' },
-            { id: 1002, text: "Server quote 2: Any fool can write code that a computer can understand. Good programmers write code that humans can understand.", category: "Programming", source: 'server' },
-            { id: 1003, text: "Server quote 3: The best thing about a boolean is even if you are wrong, you are only off by a bit.", category: "Programming", source: 'server' }
-        ];
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
         
-        // Merge with local quotes
-        const conflicts = mergeQuotes(serverQuotes);
+        const posts = await response.json();
+        
+        // Convert posts to quotes
+        const serverQuotes = posts.map(post => ({
+            id: post.id + 1000, // Offset to avoid conflicts
+            text: post.title,
+            category: 'Server',
+            body: post.body,
+            source: 'server',
+            timestamp: new Date().toISOString()
+        }));
+        
+        // Merge with local quotes and handle conflicts
+        const conflicts = mergeQuotesWithServer(serverQuotes);
         
         if (conflicts.length > 0) {
-            showConflictNotification(conflicts);
-            showNotification(`Fetched ${serverQuotes.length} quotes. ${conflicts.length} conflicts detected.`, 'warning');
-            alert('Data conflicts detected! Server version used.');
+            showConflictAlert(conflicts);
+            showNotification(`Fetched ${serverQuotes.length} quotes. ${conflicts.length} conflicts resolved.`, 'warning');
         } else {
             showNotification(`Successfully fetched ${serverQuotes.length} quotes from server.`, 'success');
         }
@@ -259,7 +267,7 @@ async function fetchQuotesFromServer() {
         
     } catch (error) {
         showNotification(`Failed to fetch from server: ${error.message}`, 'error');
-        alert('Failed to sync with server!');
+        console.error('Fetch error:', error);
     }
 }
 
@@ -268,21 +276,43 @@ async function postDataToServer() {
     
     try {
         // Get local quotes to post
-        const localQuotes = quotes.filter(q => q.source === 'local');
+        const localQuotes = quotes.filter(q => q.source === 'local').slice(0, 2);
         
         if (localQuotes.length === 0) {
             showNotification('No local quotes to post.', 'warning');
             return;
         }
         
-        // Simulate API post with delay
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Prepare data for POST
+        const postData = localQuotes.map(quote => ({
+            title: quote.text.substring(0, 50),
+            body: `${quote.category}: ${quote.text}`,
+            userId: 1
+        }));
         
-        // Mock successful post
-        showNotification(`Successfully posted ${localQuotes.length} local quotes to server.`, 'success');
+        // POST to server using fetch with proper headers
+        for (const data of postData) {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            console.log('Posted to server:', result);
+        }
+        
+        showNotification(`Successfully posted ${localQuotes.length} quotes to server.`, 'success');
         
     } catch (error) {
         showNotification(`Failed to post to server: ${error.message}`, 'error');
+        console.error('Post error:', error);
     }
 }
 
@@ -293,9 +323,168 @@ function syncQuotes() {
     fetchQuotesFromServer();
     postDataToServer();
     
-    // Show sync completion alert (required by checker)
-    // THIS IS THE EXACT ALERT THE CHECKER IS LOOKING FOR
+    // Show sync completion alert
     setTimeout(() => {
         alert('Quotes synced with server!');
     }, 1500);
 }
+
+function mergeQuotesWithServer(serverQuotes) {
+    const conflicts = [];
+    
+    serverQuotes.forEach(serverQuote => {
+        const existingIndex = quotes.findIndex(q => q.id === serverQuote.id);
+        
+        if (existingIndex === -1) {
+            // New quote from server
+            quotes.push(serverQuote);
+        } else {
+            // Check for conflict
+            const localQuote = quotes[existingIndex];
+            if (localQuote.text !== serverQuote.text || localQuote.category !== serverQuote.category) {
+                conflicts.push({
+                    id: serverQuote.id,
+                    local: { ...localQuote },
+                    server: { ...serverQuote },
+                    timestamp: new Date().toISOString()
+                });
+                
+                // Server wins (simple conflict resolution)
+                quotes[existingIndex] = serverQuote;
+            }
+        }
+    });
+    
+    // Update local storage with server data
+    localStorage.setItem('quotesData', JSON.stringify(quotes));
+    
+    return conflicts;
+}
+
+function showConflictAlert(conflicts) {
+    if (conflicts.length > 0) {
+        const conflictDiv = document.createElement('div');
+        conflictDiv.className = 'notification conflict-alert';
+        conflictDiv.innerHTML = `
+            <strong>⚠️ Data Conflict Detected!</strong>
+            <p>${conflicts.length} conflict(s) found between local and server data.</p>
+            <p>Server version was used for all conflicts.</p>
+            <button onclick="this.parentElement.style.display='none'" 
+                    style="margin-top: 10px; padding: 5px 10px; background: #ffc107; color: #000;">
+                Dismiss
+            </button>
+        `;
+        
+        const notificationArea = document.getElementById('notificationArea');
+        notificationArea.appendChild(conflictDiv);
+        
+        // Auto-dismiss after 10 seconds
+        setTimeout(() => {
+            conflictDiv.style.display = 'none';
+        }, 10000);
+        
+        // Also show alert
+        alert(`Found ${conflicts.length} data conflicts during sync!`);
+    }
+}
+
+// ============================================
+// PERIODIC SYNC
+// ============================================
+
+function startPeriodicSync() {
+    // Clear any existing interval
+    if (syncInterval) {
+        clearInterval(syncInterval);
+    }
+    
+    // Check if auto-sync is enabled
+    const autoSync = document.getElementById('autoSync');
+    if (autoSync && autoSync.checked) {
+        // Set up periodic sync every 10 seconds
+        syncInterval = setInterval(() => {
+            console.log('Periodic sync triggered at', new Date().toLocaleTimeString());
+            fetchQuotesFromServer();
+        }, 10000); // Every 10 seconds
+        
+        // Initial sync after 2 seconds
+        setTimeout(() => {
+            fetchQuotesFromServer();
+        }, 2000);
+    }
+}
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+function updateQuoteList() {
+    const container = document.getElementById('allQuotes');
+    const filteredQuotes = getFilteredQuotes();
+    
+    container.innerHTML = '<h4>All Quotes (' + filteredQuotes.length + '):</h4>';
+    
+    if (filteredQuotes.length === 0) {
+        container.innerHTML += '<p>No quotes found.</p>';
+        return;
+    }
+    
+    filteredQuotes.forEach((quote, index) => {
+        const div = document.createElement('div');
+        div.style.padding = '10px';
+        div.style.margin = '5px 0';
+        div.style.border = '1px solid #ddd';
+        div.style.borderRadius = '3px';
+        div.innerHTML = `
+            <p><strong>${index + 1}.</strong> "${quote.text}"</p>
+            <p><em>Category: ${quote.category} | Source: ${quote.source || 'local'}</em></p>
+        `;
+        container.appendChild(div);
+    });
+}
+
+function showNotification(message, type) {
+    const notificationArea = document.getElementById('notificationArea');
+    
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.innerHTML = message;
+    
+    notificationArea.appendChild(notification);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 5000);
+}
+
+function saveToSession() {
+    const quoteDisplay = document.getElementById('quoteDisplay');
+    const quoteText = quoteDisplay.querySelector('p')?.textContent;
+    
+    if (quoteText && !quoteText.includes('No quotes')) {
+        const quoteObj = {
+            text: quoteText.replace(/"/g, ''),
+            category: 'Session Saved',
+            timestamp: new Date().toISOString()
+        };
+        sessionStorage.setItem('savedQuote', JSON.stringify(quoteObj));
+        showNotification('Quote saved to session storage!', 'success');
+    } else {
+        showNotification('No quote to save.', 'error');
+    }
+}
+
+// ============================================
+// EVENT LISTENERS
+// ============================================
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-sync checkbox listener
+    const autoSyncCheckbox = document.getElementById('autoSync');
+    if (autoSyncCheckbox) {
+        autoSyncCheckbox.addEventListener('change', startPeriodicSync);
+    }
+});
